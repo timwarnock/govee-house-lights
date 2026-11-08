@@ -9,6 +9,8 @@ One Python interface, `LightsBackend`, has two implementations:
 
 The scheduler and the `on` / `off` / `status` commands call that interface and do not care which backend is plugged in.
 
+The agreed schedule is [SCHEDULE.md](SCHEDULE.md). It is not built yet. `src/house_lights/holidays.py` is the old preview table. Do not treat that table as the schedule.
+
 The lights are already on Wi-Fi at **192.168.0.119**. The Wi-Fi MAC for this install is **D4-13-68-B6-D3-92**. That MAC is not used as the Bluetooth address. Pass `--ble-address`, or let a scan save one.
 
 ## Install on Ubuntu
@@ -176,6 +178,8 @@ A phase that already succeeded is not sent again until the date or the day/night
 `preview` prints the pattern and does not open a socket or a Bluetooth adapter. Add `--lat` and `--lon` if you also want sunrise and sunset for that date.
 
 ## Holiday looks
+
+The rows below are what `preview` and `on` do today. The schedule to build is [SCHEDULE.md](SCHEDULE.md).
 
 All of these are static. On Bluetooth a mixed pattern repeats one light per color from the plug and leaves it. A single color fills the string. Nothing blinks, chases, or strobes.
 
