@@ -1,48 +1,39 @@
-# Edit the YAML in desired-state/, then run `make install`.
-# Another directory can be selected with --desired-state or the config key desired_state.
-# install runs test first. test checks that the YAML loads.
+# Edit desired-state/ and config.json, then run `make install`.
+# make config creates config.json when it is missing. It does not overwrite it.
+# install runs config, then test. test checks the YAML and config.json.
 
-.PHONY: test install uninstall clean
+.PHONY: test config install uninstall clean
 
-PREFIX := $(HOME)/.local
-DESIRED_STATE_DIR := $(PREFIX)/share/house-lights/desired-state
-CONFIG_DIR := $(HOME)/.config/house-lights
-STATE_DIR := $(PREFIX)/state/house-lights
 UNIT_DIR := $(HOME)/.config/systemd/user
-CONFIG := $(CONFIG_DIR)/config.json
-STATE := $(STATE_DIR)/daemon.json
 UNIT := $(UNIT_DIR)/house-lights.service
+CONFIG := $(CURDIR)/config.json
+STATE := $(CURDIR)/desired-state/daemon.json
 
 test:
 	uv run python -m unittest discover -s tests -v
 
-install: test
+config:
+	python3 contrib/make_config.py "$(CONFIG)"
+
+install:
+	$(MAKE) config
+	$(MAKE) test
 	uv tool install --force "$(CURDIR)"
-	install -d "$(CONFIG_DIR)" "$(STATE_DIR)" "$(UNIT_DIR)"
-	rm -rf "$(DESIRED_STATE_DIR)"
-	install -d "$(DESIRED_STATE_DIR)"
-	cp -a desired-state/. "$(DESIRED_STATE_DIR)/"
-	if [ ! -f "$(CONFIG)" ]; then install -m 600 config.example.json "$(CONFIG)"; fi
+	install -d "$(UNIT_DIR)"
 	set -eu; \
 	bin="$$(uv tool dir --bin)/house-lights"; \
 	test -x "$$bin"; \
-	sed "s|@BIN@|$$bin|g" contrib/house-lights.service.in > "$(UNIT)"; \
+	sed -e "s|@BIN@|$$bin|g" -e "s|@ROOT@|$(CURDIR)|g" contrib/house-lights.service.in > "$(UNIT)"; \
 	systemctl --user daemon-reload; \
-	if python3 "$(CURDIR)/contrib/config_ready.py" "$(CONFIG)"; then \
-		rm -f "$(STATE)"; \
-		systemctl --user enable house-lights.service; \
-		systemctl --user restart house-lights.service; \
-		printf '%s\n' "Installed house-lights and restarted the daemon."; \
-	else \
-		printf '%s\n' "Installed the command and the service file. Edit $(CONFIG), then run make install again."; \
-		exit 1; \
-	fi
+	rm -f "$(STATE)"; \
+	systemctl --user enable house-lights.service; \
+	systemctl --user restart house-lights.service; \
+	printf '%s\n' "Installed house-lights and restarted the daemon."
 
 uninstall:
 	-systemctl --user disable --now house-lights.service
 	rm -f "$(UNIT)"
 	-systemctl --user daemon-reload
-	rm -rf "$(DESIRED_STATE_DIR)"
 	rm -f "$(STATE)"
 	-uv tool uninstall house-lights
 

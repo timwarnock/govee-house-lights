@@ -64,37 +64,39 @@ def easter_sunday(year: int) -> date:
     return date(year, month, day)
 
 
-def installed_desired_state_dir() -> Path:
-    """Default copy destination used by ``make install``."""
-    return Path.home() / ".local" / "share" / "house-lights" / "desired-state"
+def project_root() -> Path | None:
+    """The checkout that holds ``desired-state/``, from the working directory or this source tree."""
+    candidates = [Path.cwd()]
+    path = Path(__file__).resolve()
+    if len(path.parents) >= 3:
+        candidates.append(path.parents[2])
+    for root in candidates:
+        desired = root / "desired-state"
+        if desired.is_dir() and any(desired.glob("*.yaml")):
+            return root
+    return None
 
 
-def default_state_path() -> Path:
-    """Edge memory used by ``make install`` and the daemon."""
-    return Path.home() / ".local" / "state" / "house-lights" / "daemon.json"
+def default_config_path() -> Path | None:
+    """``config.json`` in the project root, when that file has been created."""
+    root = project_root()
+    if root is None:
+        return None
+    candidate = root / "config.json"
+    return candidate if candidate.is_file() else None
 
 
 def resolve_desired_state_dir(explicit: Path | None) -> Path:
-    """Use an explicit path, then a checkout, then the installed copy.
-
-    The explicit path comes from ``--desired-state`` or the config key ``desired_state``.
-    """
+    """Use an explicit path, then the project ``desired-state/`` directory."""
     if explicit is not None:
         return explicit.expanduser()
-    checkout = _checkout_desired_state()
-    if checkout is not None:
-        return checkout
-    return installed_desired_state_dir()
-
-
-def _checkout_desired_state() -> Path | None:
-    path = Path(__file__).resolve()
-    if len(path.parents) < 3:
-        return None
-    candidate = path.parents[2] / "desired-state"
-    if candidate.is_dir() and any(candidate.glob("*.yaml")):
-        return candidate
-    return None
+    root = project_root()
+    if root is not None:
+        return root / "desired-state"
+    raise DeclarationError(
+        "desired-state directory not found. Run house-lights from the project, "
+        "or pass --desired-state."
+    )
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,7 @@ class Declaration:
     holidays: tuple[_Rule, ...]
     seasons: tuple[_Rule, ...]
     default_colors: tuple[RGB, ...] | None
+    brightness: int
     exact_days: dict[date, _Rule]
     every_days: dict[tuple[int, int], _Rule]
     directory: Path
@@ -172,12 +175,13 @@ class Declaration:
             raise DeclarationError(f"desired-state directory not found: {directory}")
         holidays = _load_named_list(directory / "holidays.yaml", _holiday)
         seasons = _load_named_list(directory / "seasons.yaml", _season)
-        default_colors = _load_default(directory / "default.yaml")
+        default_colors, brightness = _load_default(directory / "default.yaml")
         exact_days, every_days = _load_days(directory / "days")
         return cls(
             holidays=holidays,
             seasons=seasons,
             default_colors=default_colors,
+            brightness=brightness,
             exact_days=exact_days,
             every_days=every_days,
             directory=directory,
@@ -408,17 +412,23 @@ def _load_named_list(path: Path, parse) -> tuple[_Rule, ...]:
     return tuple(parse(item, path.name, index) for index, item in enumerate(raw, start=1))
 
 
-def _load_default(path: Path) -> tuple[RGB, ...] | None:
+def _load_default(path: Path) -> tuple[tuple[RGB, ...] | None, int]:
     if not path.is_file():
-        return None
+        return None, 70
     raw = _read_yaml(path)
     if not isinstance(raw, dict):
         raise DeclarationError("default.yaml must be a mapping")
-    unknown = set(raw) - {"colors", "description"}
+    unknown = set(raw) - {"colors", "description", "brightness"}
     if unknown:
         raise DeclarationError(f"default.yaml has unknown keys: {', '.join(sorted(unknown))}")
     _optional_text(raw.get("description"), "default.yaml description")
-    return _colors(raw.get("colors"), "default.yaml")
+    return _colors(raw.get("colors"), "default.yaml"), _brightness(raw.get("brightness", 70), path.name)
+
+
+def _brightness(value: object, where: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 100:
+        raise DeclarationError(f"{where} brightness must be an integer from 1 to 100")
+    return value
 
 
 def _load_days(directory: Path) -> tuple[dict[date, _Rule], dict[tuple[int, int], _Rule]]:

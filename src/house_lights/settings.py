@@ -13,7 +13,6 @@ log = logging.getLogger("house_lights")
 
 DEFAULT_TIMEZONE = "America/Chicago"
 DEFAULT_SKU = "H706C"
-DEFAULT_BRIGHTNESS = 70
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_RETRIES = 3
 DEFAULT_RETRY_DELAY = 1.0
@@ -27,14 +26,11 @@ CONFIG_KEYS = frozenset({
     "lat",
     "lon",
     "timezone",
-    "brightness",
     "timeout",
     "retries",
     "retry_delay",
     "scan",
     "ble_cache",
-    "desired_state",
-    "state",
     "enforce_minutes",
 })
 
@@ -53,7 +49,7 @@ class Settings:
     lat: float | None
     lon: float | None
     timezone: str
-    brightness: int
+    brightness: int | None
     timeout: float
     retries: int
     retry_delay: float
@@ -134,9 +130,11 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
     if (lat_f is None) ^ (lon_f is None):
         raise UsageError("pass both --lat and --lon")
 
-    brightness = int(_pick(args.brightness, data, "brightness", DEFAULT_BRIGHTNESS))
-    if not 1 <= brightness <= 100:
-        raise UsageError("--brightness must be an integer from 1 to 100")
+    brightness = args.brightness
+    if brightness is not None:
+        brightness = int(brightness)
+        if not 1 <= brightness <= 100:
+            raise UsageError("--brightness must be an integer from 1 to 100")
 
     timeout = float(_pick(args.timeout, data, "timeout", DEFAULT_TIMEOUT))
     retries = int(_pick(args.retries, data, "retries", DEFAULT_RETRIES))
@@ -151,9 +149,9 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
     scan = bool(args.scan or data.get("scan", False))
     cache_raw = _pick(getattr(args, "ble_cache", None), data, "ble_cache", str(DEFAULT_BLE_CACHE))
     when = _parse_date(args.date, timezone) if getattr(args, "date", None) else None
-    desired_state_raw = _pick(getattr(args, "desired_state_dir", None), data, "desired_state", None)
-    desired_state_dir = Path(str(desired_state_raw)).expanduser() if desired_state_raw else None
-    state_raw = _pick(getattr(args, "state_path", None), data, "state", None)
+    desired_raw = getattr(args, "desired_state_dir", None)
+    desired_state_dir = Path(str(desired_raw)).expanduser() if desired_raw else None
+    state_raw = getattr(args, "state_path", None)
     state_path = Path(str(state_raw)).expanduser() if state_raw else None
     enforce_raw = _pick(getattr(args, "enforce_minutes", None), data, "enforce_minutes", None)
     if enforce_raw is None:

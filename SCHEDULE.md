@@ -1,14 +1,14 @@
 # Schedule
 
-Agreed design for the house lights. The YAML is the definition. The default files live in `desired-state/`. A config `desired_state` path or `--desired-state` selects another directory. The daemon makes the string match that directory.
+Agreed design for the house lights. The YAML in `desired-state/` is the definition. `config.json` in the repo root is gitignored and holds the machine settings. The daemon makes the string match that directory.
 
 Do not add a rule that is not written here. Items under **Open** are not decided.
 
 ## Power
 
-Every sunset turns the string on. Every sunrise turns it off. Sun times come from local `astral` (pinned 3.2) using the house latitude and longitude and `America/Chicago`. No network lookup. Official sunrise and sunset (upper limb plus refraction).
+Every sunset turns the string on. Every sunrise turns it off. Sun times come from local `astral` (pinned 3.2) using the latitude, longitude, and timezone in `config.json`. No network lookup. Official sunrise and sunset (upper limb plus refraction).
 
-Latitude and longitude are not in the repo. `config.example.json` has the timezone only.
+Latitude and longitude live in the gitignored `config.json`. They are not committed.
 
 If the phone app changes the lights later that night, leave them, unless enforce mode is on. There is no global midnight resend.
 
@@ -20,7 +20,7 @@ A color list may be any length. Fewer than 120 colors repeats from the plug unti
 
 `default.yaml` is warm white `(255, 197, 143)`. A season that would only be warm white is omitted, so those nights use the default. If nothing matches and there is no default file, sunset still turns the string on and sends no color list.
 
-Brightness is still a single CLI setting (default 70). Per-entry brightness is not decided.
+Brightness is the `brightness` key in `desired-state/default.yaml`. It is one number for the whole string. Per-entry brightness is not decided.
 
 ## Precedence
 
@@ -66,7 +66,7 @@ systemd starts it at boot and restarts it if it dies. A user service needs `logi
 
 Optional enforce, off unless configured: wake every N minutes, read status, and correct anything that disagrees with the declaration. Status can see power and brightness. It cannot see the 120-light color list, so enforce mode resends that list. Each check holds the radio for about 30 seconds. N should be several minutes if the phone still needs to connect between checks.
 
-On startup, apply the current phase if that edge has not succeeded. Remember a succeeded edge so a later restart leaves a phone change in place. `make install` clears that memory, copies `desired-state/` into the default location, and restarts the user service so an edited file is applied.
+On startup, apply the current phase if that edge has not succeeded. Remember a succeeded edge so a later restart leaves a phone change in place. `make install` clears that memory and restarts the user service. The service reads `desired-state/` and `config.json` in the project, so an edited file is applied.
 
 ## Holidays
 

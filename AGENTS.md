@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Read [SCHEDULE.md](SCHEDULE.md) before any schedule work. It is the agreed design. Open items there are not decided. The YAML in `desired-state/` is the default definition of the lights. `--desired-state` or the config key `desired_state` selects another directory. The daemon makes the string match that directory.
+Read [SCHEDULE.md](SCHEDULE.md) before any schedule work. It is the agreed design. Open items there are not decided. The YAML in `desired-state/` is the definition of the lights. `config.json` in the repo root is gitignored and holds the machine settings. The daemon reads that directory and that file. Do not put those settings under the home directory.
 
 Push and clone only through the timwarnock host:
 

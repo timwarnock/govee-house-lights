@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from house_lights import __version__
 from house_lights.backend import ApplyResult, LightsBackend
 from house_lights.daemon import run_daemon
-from house_lights.plan import Declaration, Palette, Planner, default_state_path, resolve_desired_state_dir
+from house_lights.plan import Declaration, Palette, Planner, default_config_path, resolve_desired_state_dir
 from house_lights.settings import Settings, UsageError, settings_from_namespace
 from house_lights.still import RGB
 
@@ -42,7 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory of desired-state YAML; overrides the config key and the default desired-state/",
     )
     common.add_argument("--timezone", help="IANA timezone (default America/Chicago)")
-    common.add_argument("--brightness", type=int, help="1-100 (default 70)")
+    common.add_argument(
+        "--brightness",
+        type=int,
+        help="1-100 override for this command; the default is brightness in desired-state/default.yaml",
+    )
     common.add_argument("--timeout", type=float, help="scan and LAN reply timeout seconds (default 8)")
     common.add_argument("--retries", type=int, help="attempts per command after a failure (default 3)")
     common.add_argument("--retry-delay", dest="retry_delay", type=float, help="seconds between retries (default 1)")
@@ -81,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if not getattr(args, "config", None):
+        found = default_config_path()
+        if found is not None:
+            args.config = str(found)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(message)s",
@@ -108,6 +116,7 @@ def _preview(settings: Settings) -> int:
     day = settings.when or datetime.now(zone).date()
     palette = declaration.on_date(day)
     print(f"date: {day.isoformat()}")
+    print(f"brightness: {declaration.brightness}")
     print(f"pattern: {palette.source}")
     _print_palette(palette)
     if settings.lat is None or settings.lon is None:
@@ -143,7 +152,7 @@ async def _daemon(settings: Settings) -> int:
             loop.add_signal_handler(sig, stop.set)
         except NotImplementedError:
             pass
-    state_path = settings.state_path or default_state_path()
+    state_path = settings.state_path or (declaration.directory / "daemon.json")
     log = logging.getLogger("house_lights")
     log.info("desired-state %s timezone %s", declaration.directory, settings.timezone)
     nxt = planner.next_edge(datetime.now(ZoneInfo(settings.timezone)))
@@ -152,12 +161,18 @@ async def _daemon(settings: Settings) -> int:
     await run_daemon(
         backend,
         planner,
-        brightness=settings.brightness,
+        brightness=_brightness(settings, declaration),
         state_path=state_path,
         stop=stop,
         enforce_minutes=settings.enforce_minutes,
     )
     return 0
+
+
+def _brightness(settings: Settings, declaration: Declaration) -> int:
+    if settings.brightness is not None:
+        return settings.brightness
+    return declaration.brightness
 
 
 def _declaration(settings: Settings) -> Declaration:
@@ -186,7 +201,7 @@ async def _turn_on(backend: LightsBackend, settings: Settings) -> int:
     day = settings.when or datetime.now(ZoneInfo(settings.timezone)).date()
     palette = declaration.on_date(day)
     await backend.turn_on()
-    await backend.set_brightness(settings.brightness)
+    await backend.set_brightness(_brightness(settings, declaration))
     if not palette.colors:
         print(f"on: {palette.source}, no color list")
         return 0

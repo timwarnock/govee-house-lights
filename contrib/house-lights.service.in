@@ -2,14 +2,14 @@
 Description=House lights
 After=bluetooth.target
 Wants=bluetooth.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=@BIN@ daemon --config %h/.config/house-lights/config.json --state %h/.local/state/house-lights/daemon.json
+ExecStart=@BIN@ daemon --config @ROOT@/config.json --desired-state @ROOT@/desired-state --state @ROOT@/desired-state/daemon.json
 Restart=on-failure
 RestartSec=30
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 [Install]
 WantedBy=default.target

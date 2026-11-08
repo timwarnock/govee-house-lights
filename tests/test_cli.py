@@ -39,9 +39,25 @@ class CliTests(unittest.TestCase):
         self.assertIn("colors:", text)
 
     def test_daemon_requires_coordinates(self) -> None:
-        with self.assertRaises(SystemExit) as caught:
-            main(["daemon", "--backend", "lan", "--ip", "192.168.1.100"])
-        self.assertEqual(caught.exception.code, 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "backend": "lan",
+                        "ip": "192.168.1.100",
+                        "timezone": "America/Chicago",
+                        "sku": "H706C",
+                        "timeout": 8,
+                        "retries": 3,
+                        "retry_delay": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as caught:
+                main(["daemon", "--config", str(path)])
+            self.assertEqual(caught.exception.code, 2)
 
     def test_lan_requires_an_address(self) -> None:
         with self.assertRaises(SystemExit) as caught:
@@ -55,41 +71,31 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.timezone, "America/Chicago")
         self.assertEqual(settings.sku, "H706C")
         self.assertIsNone(settings.ble_address)
-        self.assertEqual(settings.brightness, 70)
+        self.assertIsNone(settings.brightness)
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "lights.json"
             path.write_text(
-                json.dumps({"backend": "lan", "ip": "10.1.1.1", "brightness": 15, "lat": 1, "lon": 2}),
+                json.dumps({"backend": "lan", "ip": "10.1.1.1", "lat": 1, "lon": 2}),
                 encoding="utf-8",
             )
             flagged = build_parser().parse_args(
-                ["status", "--config", str(path), "--ip", "10.2.2.2", "--backend", "bluetooth"]
+                ["status", "--config", str(path), "--ip", "10.2.2.2", "--backend", "bluetooth", "--brightness", "40"]
             )
             merged = settings_from_namespace(flagged)
         self.assertEqual(merged.ip, "10.2.2.2")
         self.assertEqual(merged.backend, "bluetooth")
-        self.assertEqual(merged.brightness, 15)
+        self.assertEqual(merged.brightness, 40)
         self.assertEqual(merged.lat, 1.0)
         self.assertEqual(merged.lon, 2.0)
 
-    def test_desired_state_path_flag_overrides_config(self) -> None:
+    def test_desired_state_flag_selects_a_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = root / "config.json"
-            from_config = root / "from-config"
-            from_flag = root / "from-flag"
-            config.write_text(json.dumps({"desired_state": str(from_config)}), encoding="utf-8")
-            configured = settings_from_namespace(
-                build_parser().parse_args(["preview", "--config", str(config), "--date", "2026-07-04"])
-            )
+            chosen = Path(tmp) / "lights"
             flagged = settings_from_namespace(
-                build_parser().parse_args(
-                    ["preview", "--config", str(config), "--desired-state", str(from_flag), "--date", "2026-07-04"]
-                )
+                build_parser().parse_args(["preview", "--desired-state", str(chosen), "--date", "2026-07-04"])
             )
-        self.assertEqual(configured.desired_state_dir, from_config)
-        self.assertEqual(flagged.desired_state_dir, from_flag)
+        self.assertEqual(flagged.desired_state_dir, chosen)
 
     def test_ble_address_normalizes_dashes(self) -> None:
         self.assertEqual(normalize_ble_address("aa-bb-cc-dd-ee-ff"), "AA:BB:CC:DD:EE:FF")

@@ -177,6 +177,17 @@ class ScheduleBehaviorTests(unittest.TestCase):
             self.assertEqual(declaration.on_date(date(2026, 1, 3)).source, "Wrap")
             self.assertEqual(declaration.on_date(date(2026, 6, 1)).source, "default")
 
+    def test_default_brightness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "default.yaml").write_text("brightness: 40\ncolors: [[1, 2, 3]]\n", encoding="utf-8")
+            self.assertEqual(Declaration.load(root).brightness, 40)
+            (root / "default.yaml").write_text("colors: [[1, 2, 3]]\n", encoding="utf-8")
+            self.assertEqual(Declaration.load(root).brightness, 70)
+            (root / "default.yaml").write_text("brightness: 0\ncolors: [[1, 2, 3]]\n", encoding="utf-8")
+            with self.assertRaises(DeclarationError):
+                Declaration.load(root)
+
     def test_bad_files_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
