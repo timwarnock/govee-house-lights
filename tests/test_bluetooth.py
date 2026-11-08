@@ -9,9 +9,12 @@ from govee_ble_local import Capability, GoveeBleInvalidValue, create_device, pro
 from govee_ble_local.wire import build
 
 from house_lights.bluetooth import BluetoothBackend
-from house_lights.holidays import CHRISTMAS, RED, WARM_WHITE
 from house_lights.settings import DEFAULT_BLE_CACHE, Settings
 from house_lights.still import STILL_COMM, STILL_SCENE, still_scene_value
+
+RED = (255, 0, 0)
+WARM_WHITE = (255, 197, 143)
+CHRISTMAS = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0))
 
 
 class FakeConn:
@@ -33,23 +36,20 @@ def settings(tmp: Path, **overrides) -> Settings:
     data = dict(
         command="on",
         backend="bluetooth",
-        ip="192.168.0.119",
+        ip="192.168.1.100",
         ble_address="AA:BB:CC:DD:EE:FF",
         sku="H706C",
         lat=None,
         lon=None,
         timezone="America/Chicago",
         brightness=70,
-        segments=None,
         timeout=0.2,
         retries=1,
         retry_delay=0.0,
-        poll_interval=60.0,
         scan=False,
         ble_cache=tmp / "ble.json",
         when=None,
         config_path=None,
-        grid=None,
     )
     data.update(overrides)
     return Settings(**data)
@@ -103,29 +103,18 @@ class BluetoothTests(unittest.TestCase):
         backend = BluetoothBackend(settings(Path("/tmp")), device_factory=lambda *a, **k: device)
         backend._device = device
 
-        result = asyncio.run(backend.apply_pattern(CHRISTMAS.colors))
+        result = asyncio.run(backend.apply_pattern(CHRISTMAS))
 
         self.assertEqual(result.mode, "ble_rgbic_still")
-        self.assertEqual(result.colors_sent, CHRISTMAS.colors)
+        self.assertEqual(result.colors_sent, CHRISTMAS)
         self.assertEqual(device.calls, [])
         upload, frames, unit = device._conn.calls[0]
         self.assertEqual(upload, "upload")
         self.assertEqual(unit.comm, STILL_COMM)
-        self.assertEqual(frames, build.scene_upload_a3(still_scene_value(CHRISTMAS.colors), STILL_COMM))
+        self.assertEqual(frames, build.scene_upload_a3(still_scene_value(CHRISTMAS), STILL_COMM))
         kind, show = device._conn.calls[1]
         self.assertEqual(kind, "show")
         self.assertEqual(show, build.scene_activate(STILL_SCENE))
-
-    def test_mixed_pattern_ignores_the_segment_override(self) -> None:
-        device = FakeDevice(frozenset({Capability.SEGMENTS}), count=12)
-        backend = BluetoothBackend(
-            settings(Path("/tmp"), segments=6),
-            device_factory=lambda *a, **k: device,
-        )
-        backend._device = device
-        asyncio.run(backend.apply_pattern(CHRISTMAS.colors))
-        self.assertEqual(device.calls, [])
-        self.assertEqual(device._conn.calls[0][0], "upload")
 
     def test_solid_pattern_uses_set_rgb(self) -> None:
         device = FakeDevice(frozenset({Capability.SEGMENTS}))
@@ -139,7 +128,7 @@ class BluetoothTests(unittest.TestCase):
         device = FakeDevice(frozenset({Capability.RGB, Capability.POWER}))
         backend = BluetoothBackend(settings(Path("/tmp")))
         backend._device = device
-        result = asyncio.run(backend.apply_pattern(CHRISTMAS.colors))
+        result = asyncio.run(backend.apply_pattern(CHRISTMAS))
         self.assertEqual(result.mode, "ble_rgbic_still")
         self.assertEqual(device.calls, [])
         self.assertEqual(device._conn.calls[0][0], "upload")

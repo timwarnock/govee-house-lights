@@ -19,8 +19,8 @@ import logging
 import socket
 from typing import Protocol, Sequence
 
-from house_lights.backend import ApplyResult, GridResult, LightStatus
-from house_lights.holidays import RGB
+from house_lights.backend import ApplyResult, LightStatus
+from house_lights.still import RGB
 from house_lights.retry import call_with_retry
 
 log = logging.getLogger("house_lights")
@@ -33,8 +33,8 @@ CONTROL_PORT = 4003
 LAN_MIXED_NOTE = (
     "Official LAN colorwc sets one color or one color temperature for the whole "
     "device (https://app-h5.govee.com/user-manual/wlan-guide). "
-    "Mixed per-light colors were not painted. Applied the first color {rgb} "
-    "to the whole device. Use --backend bluetooth to paint a repeating segment pattern."
+    "A mixed color list uses the first color {rgb} on the whole device. "
+    "Per-light color uses Bluetooth."
 )
 
 
@@ -288,12 +288,6 @@ class LanBackend:
         chosen, note = lan_color_plan(colors)
         await self._send(colorwc_payload(chosen), "LAN colorwc")
         return ApplyResult(mode="lan_colorwc_whole_device", colors_sent=(chosen,), note=note)
-
-    async def apply_grid(self, colors: Sequence[RGB], *, brightness: int) -> GridResult:
-        raise LanError(
-            "LAN colorwc paints one color on the whole device. "
-            "A per-light grid needs --backend bluetooth."
-        )
 
     async def status(self) -> LightStatus | None:
         message = await call_with_retry(

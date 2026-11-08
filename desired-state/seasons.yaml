@@ -1,0 +1,28 @@
+# A season loses to a holiday and to a file in days/.
+# First matching entry wins. A season that would only be warm white is left out.
+#
+# Christmas below is December 24 through December 26. That covers the sunset
+# of the 24th and the return of these colors at midnight on the 26th.
+# December 1 through January 5 is not settled; widen the range here if you want it.
+
+- name: Lent
+  start: {easter: -46}
+  end: {easter: -1}
+  colors:
+    - [102, 0, 153]
+
+- name: Eastertide
+  start: {easter: 1}
+  end: {easter: 48}
+  colors:
+    - [255, 255, 255]
+    - [255, 215, 0]
+
+- name: Christmas season
+  start: {month: 12, day: 24}
+  end: {month: 12, day: 26}
+  colors:
+    - [255, 0, 0]
+    - [0, 255, 0]
+    - [0, 0, 255]
+    - [255, 165, 0]

@@ -10,40 +10,48 @@ from house_lights.settings import UsageError, normalize_ble_address, settings_fr
 
 
 class CliTests(unittest.TestCase):
-    def test_preview_independence_day(self) -> None:
-        buffer = io.StringIO()
-        with redirect_stdout(buffer):
-            code = main(["preview", "--date", "2026-07-04"])
-        text = buffer.getvalue()
-        self.assertEqual(code, 0)
-        self.assertIn("Independence Day", text)
+    def test_preview_reads_a_desired_state_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "holidays.yaml").write_text(
+                "\n".join([
+                    "- name: Fixture Day",
+                    "  month: 7",
+                    "  day: 4",
+                    "  colors:",
+                    "    - [255, 0, 0]",
+                    "    - [255, 255, 255]",
+                    "    - [0, 0, 255]",
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+            text = _preview(["preview", "--desired-state", str(root), "--date", "2026-07-04"])
+        self.assertIn("Fixture Day", text)
         self.assertIn("red (255, 0, 0)", text)
         self.assertIn("white (255, 255, 255)", text)
         self.assertIn("blue (0, 0, 255)", text)
         self.assertIn("repeating sequence", text)
 
-    def test_preview_christmas_and_new_year_and_default(self) -> None:
-        christmas = _preview(["preview", "--date", "2026-12-25"])
-        self.assertIn("Classic Christmas", christmas)
-        self.assertIn("orange/yellow", christmas)
-        self.assertIn("blue", christmas)
-        new_year = _preview(["preview", "--date", "2026-12-31"])
-        self.assertIn("New Year's", new_year)
-        self.assertIn("gold", new_year)
-        self.assertIn("white", new_year)
-        plain = _preview(["preview", "--date", "2026-03-03"])
-        self.assertIn("Default night", plain)
-        self.assertIn("warm white", plain)
+    def test_repo_desired_state_preview(self) -> None:
+        text = _preview(["preview", "--date", "2026-03-03"])
+        self.assertIn("pattern:", text)
+        self.assertIn("colors:", text)
 
-    def test_run_requires_coordinates(self) -> None:
+    def test_daemon_requires_coordinates(self) -> None:
         with self.assertRaises(SystemExit) as caught:
-            main(["run", "--backend", "lan"])
+            main(["daemon", "--backend", "lan", "--ip", "192.168.1.100"])
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_lan_requires_an_address(self) -> None:
+        with self.assertRaises(SystemExit) as caught:
+            main(["status", "--backend", "lan"])
         self.assertEqual(caught.exception.code, 2)
 
     def test_defaults_and_flag_override(self) -> None:
         args = build_parser().parse_args(["preview", "--date", "2026-07-04"])
         settings = settings_from_namespace(args)
-        self.assertEqual(settings.ip, "192.168.0.119")
+        self.assertIsNone(settings.ip)
         self.assertEqual(settings.timezone, "America/Chicago")
         self.assertEqual(settings.sku, "H706C")
         self.assertIsNone(settings.ble_address)
@@ -56,17 +64,35 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             flagged = build_parser().parse_args(
-                ["status", "--config", str(path), "--ip", "192.168.0.50", "--backend", "bluetooth"]
+                ["status", "--config", str(path), "--ip", "10.2.2.2", "--backend", "bluetooth"]
             )
             merged = settings_from_namespace(flagged)
-        self.assertEqual(merged.ip, "192.168.0.50")
+        self.assertEqual(merged.ip, "10.2.2.2")
         self.assertEqual(merged.backend, "bluetooth")
         self.assertEqual(merged.brightness, 15)
         self.assertEqual(merged.lat, 1.0)
         self.assertEqual(merged.lon, 2.0)
 
+    def test_desired_state_path_flag_overrides_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "config.json"
+            from_config = root / "from-config"
+            from_flag = root / "from-flag"
+            config.write_text(json.dumps({"desired_state": str(from_config)}), encoding="utf-8")
+            configured = settings_from_namespace(
+                build_parser().parse_args(["preview", "--config", str(config), "--date", "2026-07-04"])
+            )
+            flagged = settings_from_namespace(
+                build_parser().parse_args(
+                    ["preview", "--config", str(config), "--desired-state", str(from_flag), "--date", "2026-07-04"]
+                )
+            )
+        self.assertEqual(configured.desired_state_dir, from_config)
+        self.assertEqual(flagged.desired_state_dir, from_flag)
+
     def test_ble_address_normalizes_dashes(self) -> None:
-        self.assertEqual(normalize_ble_address("d4-13-68-b6-d3-92"), "D4:13:68:B6:D3:92")
+        self.assertEqual(normalize_ble_address("aa-bb-cc-dd-ee-ff"), "AA:BB:CC:DD:EE:FF")
         with self.assertRaises(UsageError):
             normalize_ble_address("not-a-mac")
 

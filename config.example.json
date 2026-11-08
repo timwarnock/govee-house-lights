@@ -1,11 +1,10 @@
 {
-  "backend": "lan",
-  "ip": "192.168.0.119",
+  "backend": "bluetooth",
+  "ip": "192.168.1.100",
   "sku": "H706C",
   "timezone": "America/Chicago",
   "brightness": 70,
   "timeout": 8,
   "retries": 3,
-  "retry_delay": 1.0,
-  "poll_interval": 60
+  "retry_delay": 1.0
 }

@@ -5,11 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "house-lights"
 version = "0.1.0"
-description = "Local CLI for Govee Permanent Outdoor Lights Pro (H706C): LAN UDP and Bluetooth."
+description = "Local CLI and schedule daemon for Govee Permanent Outdoor Lights Pro (H706C)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{name = "Tim Warnock"}]
 dependencies = [
     "govee-ble-local==1.10.0",
     "bleak==3.0.2",
@@ -17,6 +16,7 @@ dependencies = [
     "cryptography==50.0.2",
     "kaitaistruct==0.11",
     "astral==3.2",
+    "pyyaml==6.0.2",
 ]
 
 [project.scripts]

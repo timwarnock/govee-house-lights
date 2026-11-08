@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from house_lights.holidays import RGB
+RGB = tuple[int, int, int]
 
 # Bright's scene code. Each upload replaces that slot until the app sends it again.
 STILL_SCENE = 11183

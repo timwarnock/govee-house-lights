@@ -1,0 +1,4 @@
+# Used when no day file, holiday, or season matches.
+# Sunset still turns the lights on when this file is missing.
+colors:
+  - [255, 197, 143]

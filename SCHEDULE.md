@@ -1,6 +1,6 @@
 # Schedule
 
-Agreed design for the house lights. Not built. `src/house_lights/holidays.py` still has the old preview table, including Halloween and Valentine's Day. That table is not this schedule.
+Agreed design for the house lights. The YAML is the definition. The default files live in `desired-state/`. A config `desired_state` path or `--desired-state` selects another directory. The daemon makes the string match that directory.
 
 Do not add a rule that is not written here. Items under **Open** are not decided.
 
@@ -12,7 +12,7 @@ Latitude and longitude are not in the repo. `config.example.json` has the timezo
 
 If the phone app changes the lights later that night, leave them, unless enforce mode is on. There is no global midnight resend.
 
-The Govee Home sunrise and sunset automation is a cloud rule. Disable it once this daemon owns the night. This H706C does not answer the LAN API. Bluetooth is the path that paints per light.
+The Govee Home sunrise and sunset automation is a cloud rule. Disable it once this daemon owns the night. This H706C does not answer the LAN API. Bluetooth is the path that sets a color on each light.
 
 ## What a match sends
 
@@ -24,7 +24,7 @@ Brightness is still a single CLI setting (default 70). Per-entry brightness is n
 
 ## Precedence
 
-One schedule directory. First hit wins.
+The default YAML lives in `desired-state/`. First hit wins.
 
 1. `days/YYYY-MM-DD.yaml` for that civil date. Deferred. Do not add one-off day files unless asked.
 2. `days/every-MM-DD.yaml` for that month and day, every year. The `every-` prefix keeps these files together when the directory is sorted.
@@ -60,15 +60,13 @@ No other holiday is assigned a prior night or a midnight boundary.
 
 ## Daemon
 
-The process owns the clock. It computes the next sunrise or sunset and sleeps until that absolute wall time, so a reboot or a wake from suspend lands on the right action. It closes Bluetooth after each send.
+The process owns the clock. It computes the next sunrise, sunset, or midnight color change and sleeps until that absolute wall time, so a reboot or a wake from suspend lands on the right action. It closes Bluetooth after each send.
 
 systemd starts it at boot and restarts it if it dies. A user service needs `loginctl enable-linger` for the user who owns the Bluetooth session. systemd timers are the wrong tool: sunset is a different minute every day.
 
 Optional enforce, off unless configured: wake every N minutes, read status, and correct anything that disagrees with the declaration. Status can see power and brightness. It cannot see the 120-light color list, so enforce mode resends that list. Each check holds the radio for about 30 seconds. N should be several minutes if the phone still needs to connect between checks.
 
-On startup, apply the current phase if that edge has not succeeded. Remember a succeeded edge so a later restart does not paint over a phone change. Do not install or enable the service until the schedule files exist.
-
-The current `house-lights run` command is not this daemon. It polls every 60 seconds and keeps the backend open.
+On startup, apply the current phase if that edge has not succeeded. Remember a succeeded edge so a later restart leaves a phone change in place. `make install` clears that memory, copies `desired-state/` into the default location, and restarts the user service so an edited file is applied.
 
 ## Holidays
 
@@ -129,4 +127,3 @@ In 2026 the proposed dates are Lent February 18–April 4, Eastertide April 6–
 * YAML key names, except `description`.
 * Where the house latitude and longitude live.
 * The enforce interval, if any.
-* The daemon is not installed. Do not enable it until the files exist.

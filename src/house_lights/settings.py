@@ -11,14 +11,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 log = logging.getLogger("house_lights")
 
-DEFAULT_IP = "192.168.0.119"
 DEFAULT_TIMEZONE = "America/Chicago"
 DEFAULT_SKU = "H706C"
 DEFAULT_BRIGHTNESS = 70
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_RETRIES = 3
 DEFAULT_RETRY_DELAY = 1.0
-DEFAULT_POLL_INTERVAL = 60.0
 DEFAULT_BLE_CACHE = Path.home() / ".local" / "state" / "house-lights" / "ble.json"
 
 CONFIG_KEYS = frozenset({
@@ -30,14 +28,14 @@ CONFIG_KEYS = frozenset({
     "lon",
     "timezone",
     "brightness",
-    "segments",
     "timeout",
     "retries",
     "retry_delay",
-    "poll_interval",
     "scan",
     "ble_cache",
-    "grid",
+    "desired_state",
+    "state",
+    "enforce_minutes",
 })
 
 
@@ -49,23 +47,23 @@ class UsageError(Exception):
 class Settings:
     command: str
     backend: str | None
-    ip: str
+    ip: str | None
     ble_address: str | None
     sku: str
     lat: float | None
     lon: float | None
     timezone: str
     brightness: int
-    segments: int | None
     timeout: float
     retries: int
     retry_delay: float
-    poll_interval: float
     scan: bool
     ble_cache: Path
     when: date | None
     config_path: Path | None
-    grid: Path | None
+    desired_state_dir: Path | None = None
+    state_path: Path | None = None
+    enforce_minutes: int | None = None
 
 
 def normalize_ble_address(value: str) -> str:
@@ -113,7 +111,8 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
         if backend not in {"lan", "bluetooth"}:
             raise UsageError("--backend must be lan or bluetooth")
 
-    ip = str(_pick(args.ip, data, "ip", DEFAULT_IP))
+    ip_raw = _pick(args.ip, data, "ip", None)
+    ip = str(ip_raw) if ip_raw else None
     sku = str(_pick(args.sku, data, "sku", DEFAULT_SKU)).upper()
     timezone = str(_pick(args.timezone, data, "timezone", DEFAULT_TIMEZONE))
     try:
@@ -139,39 +138,40 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
     if not 1 <= brightness <= 100:
         raise UsageError("--brightness must be an integer from 1 to 100")
 
-    segments_raw = _pick(args.segments, data, "segments", None)
-    segments = int(segments_raw) if segments_raw is not None else None
-    if segments is not None and segments < 1:
-        raise UsageError("--segments must be an integer >= 1")
-
     timeout = float(_pick(args.timeout, data, "timeout", DEFAULT_TIMEOUT))
     retries = int(_pick(args.retries, data, "retries", DEFAULT_RETRIES))
     retry_delay = float(_pick(args.retry_delay, data, "retry_delay", DEFAULT_RETRY_DELAY))
-    poll_interval = float(_pick(args.poll_interval, data, "poll_interval", DEFAULT_POLL_INTERVAL))
     if timeout <= 0:
         raise UsageError("--timeout must be > 0")
     if retries < 1:
         raise UsageError("--retries must be >= 1")
     if retry_delay < 0:
         raise UsageError("--retry-delay must be >= 0")
-    if poll_interval <= 0:
-        raise UsageError("--poll-interval must be > 0")
 
     scan = bool(args.scan or data.get("scan", False))
     cache_raw = _pick(getattr(args, "ble_cache", None), data, "ble_cache", str(DEFAULT_BLE_CACHE))
     when = _parse_date(args.date, timezone) if getattr(args, "date", None) else None
-    grid_raw = _pick(getattr(args, "grid", None), data, "grid", None)
-    grid = Path(str(grid_raw)).expanduser() if grid_raw else None
+    desired_state_raw = _pick(getattr(args, "desired_state_dir", None), data, "desired_state", None)
+    desired_state_dir = Path(str(desired_state_raw)).expanduser() if desired_state_raw else None
+    state_raw = _pick(getattr(args, "state_path", None), data, "state", None)
+    state_path = Path(str(state_raw)).expanduser() if state_raw else None
+    enforce_raw = _pick(getattr(args, "enforce_minutes", None), data, "enforce_minutes", None)
+    if enforce_raw is None:
+        enforce_minutes = None
+    elif isinstance(enforce_raw, bool):
+        raise UsageError("--enforce-minutes must be an integer >= 1")
+    else:
+        enforce_minutes = int(enforce_raw)
+        if enforce_minutes < 1:
+            raise UsageError("--enforce-minutes must be an integer >= 1")
 
-    if args.command == "run" and (lat_f is None or lon_f is None):
-        raise UsageError("run needs --lat and --lon (or both keys in --config) for local sunset and sunrise")
-    if args.command in {"on", "off", "status", "run", "paint"} and backend is None:
+    hardware = {"on", "off", "status", "daemon"}
+    if args.command == "daemon" and (lat_f is None or lon_f is None):
+        raise UsageError("daemon needs --lat and --lon (or both keys in --config) for local sunset and sunrise")
+    if args.command in hardware and backend is None:
         raise UsageError("pass --backend lan or --backend bluetooth")
-    if args.command == "paint":
-        if grid is None:
-            raise UsageError("paint needs --grid path.json")
-        if not grid.is_file():
-            raise UsageError(f"grid file not found: {grid}")
+    if args.command in hardware and backend == "lan" and not ip:
+        raise UsageError("LAN needs --ip or an ip key in --config")
 
     return Settings(
         command=args.command,
@@ -183,16 +183,16 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
         lon=lon_f,
         timezone=timezone,
         brightness=brightness,
-        segments=segments,
         timeout=timeout,
         retries=retries,
         retry_delay=retry_delay,
-        poll_interval=poll_interval,
         scan=scan,
         ble_cache=Path(cache_raw).expanduser(),
         when=when,
         config_path=Path(args.config) if getattr(args, "config", None) else None,
-        grid=grid,
+        desired_state_dir=desired_state_dir,
+        state_path=state_path,
+        enforce_minutes=enforce_minutes,
     )
 
 

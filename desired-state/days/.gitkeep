@@ -1,0 +1,4 @@
+# Keeps this directory in git. Day files added here override holidays.
+# days/YYYY-MM-DD.yaml is one civil date.
+# days/every-MM-DD.yaml is that month and day every year.
+# A description field is a note. It is not shown on the lights.

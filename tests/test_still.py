@@ -5,8 +5,12 @@ from kaitaistruct import KaitaiStream
 
 from govee_ble_local._generated.govee_upload import GoveeUpload
 
-from house_lights.holidays import BLUE, CHRISTMAS, RED, WHITE
 from house_lights.still import still_scene_value
+
+RED = (255, 0, 0)
+WHITE = (255, 255, 255)
+BLUE = (0, 0, 255)
+CHRISTMAS = (RED, (0, 255, 0), BLUE, (255, 165, 0))
 
 
 RWB = bytes.fromhex(
@@ -26,7 +30,7 @@ class StillSceneTests(unittest.TestCase):
         self.assertEqual(still_scene_value((RED, WHITE, BLUE)), RWB)
 
     def test_christmas_is_one_light_per_color(self) -> None:
-        value = still_scene_value(CHRISTMAS.colors)
+        value = still_scene_value(CHRISTMAS)
         scene = GoveeUpload.RgbicSceneValue(KaitaiStream(BytesIO(value)))
         scene._read()
         record = scene.effects[0].record
@@ -36,7 +40,7 @@ class StillSceneTests(unittest.TestCase):
         self.assertEqual(record.color_ic, 1)
         self.assertEqual(record.speed, 0)
         self.assertEqual(len(record.slack), 0)
-        self.assertEqual(_colors(value), list(CHRISTMAS.colors))
+        self.assertEqual(_colors(value), list(CHRISTMAS))
 
     def test_rejects_an_empty_palette(self) -> None:
         with self.assertRaises(ValueError):

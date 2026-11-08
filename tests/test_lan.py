@@ -4,13 +4,13 @@ import socket
 import threading
 import unittest
 
-from house_lights.grid import LIGHT_COUNT
-from house_lights.holidays import CHRISTMAS, RED, WARM_WHITE
+RED = (255, 0, 0)
+WARM_WHITE = (255, 197, 143)
+CHRISTMAS = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 165, 0))
 from house_lights.lan import (
     CONTROL_PORT,
     LAN_MIXED_NOTE,
     LanBackend,
-    LanError,
     UdpLanTransport,
     brightness_payload,
     colorwc_payload,
@@ -44,7 +44,7 @@ class LanPlanTests(unittest.TestCase):
         self.assertIsNone(note)
 
     def test_mixed_pattern_keeps_only_the_first_color(self) -> None:
-        chosen, note = lan_color_plan(CHRISTMAS.colors)
+        chosen, note = lan_color_plan(CHRISTMAS)
         self.assertEqual(chosen, RED)
         self.assertIsNotNone(note)
         assert note is not None
@@ -73,10 +73,10 @@ class LanPlanTests(unittest.TestCase):
 
     def test_backend_sends_first_color_for_christmas(self) -> None:
         transport = RecordingTransport()
-        backend = LanBackend("192.168.0.119", transport=transport, retries=1, retry_delay=0)
+        backend = LanBackend("192.168.1.100", transport=transport, retries=1, retry_delay=0)
 
         async def run() -> None:
-            result = await backend.apply_pattern(CHRISTMAS.colors)
+            result = await backend.apply_pattern(CHRISTMAS)
 
             self.assertEqual(result.colors_sent, (RED,))
             self.assertEqual(result.mode, "lan_colorwc_whole_device")
@@ -86,14 +86,6 @@ class LanPlanTests(unittest.TestCase):
         import asyncio
 
         asyncio.run(run())
-
-    def test_grid_is_refused_without_a_send(self) -> None:
-        transport = RecordingTransport()
-        backend = LanBackend("192.168.0.119", transport=transport, retries=1, retry_delay=0)
-        with self.assertRaises(LanError) as caught:
-            asyncio.run(backend.apply_grid((RED,) * LIGHT_COUNT, brightness=100))
-        self.assertIn("bluetooth", str(caught.exception))
-        self.assertEqual(transport.sent, [])
 
     def test_parse_dev_status(self) -> None:
         status = parse_dev_status(
@@ -114,7 +106,7 @@ class LanPlanTests(unittest.TestCase):
         self.assertTrue(status.is_on)
         self.assertEqual(status.brightness, 100)
         self.assertEqual(status.rgb, (255, 0, 0))
-        self.assertIsNone(parse_dev_status({"msg": {"cmd": "scan", "data": {"ip": "192.168.0.119"}}}))
+        self.assertIsNone(parse_dev_status({"msg": {"cmd": "scan", "data": {"ip": "192.168.1.100"}}}))
 
 
 class UdpTests(unittest.TestCase):

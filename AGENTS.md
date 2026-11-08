@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Read [SCHEDULE.md](SCHEDULE.md) before any schedule work. It is the agreed design. It is not implemented.
+Read [SCHEDULE.md](SCHEDULE.md) before any schedule work. It is the agreed design. Open items there are not decided. The YAML in `desired-state/` is the default definition of the lights. `--desired-state` or the config key `desired_state` selects another directory. The daemon makes the string match that directory.
 
 Push and clone only through the timwarnock host:
 
@@ -12,6 +12,6 @@ git clone git@github-timwarnock:timwarnock/govee-house-lights.git
 
 Do not invent schedule rules. Do not turn the lights on or off unless the user asked for that command. A status read does not prove the per-light colors. The phone app takes the one Bluetooth link. This unit does not answer the LAN API.
 
-The working Bluetooth paint is the still scene in `src/house_lights/still.py`: upload comm `0x02`, then scene `11183`. One palette color per light, repeating from the plug. Do not use `paint`. Do not send a bare scene `0x003b`.
+Color lists go out as the still scene in `src/house_lights/still.py`: upload comm `0x02`, then scene `11183`. One palette color per light, repeating from the plug. Do not send a bare scene `0x003b`.
 
-The runner is a daemon that sleeps until the next sunrise or sunset. systemd only keeps that process alive. Do not schedule sunset with systemd timers. The daemon is not installed.
+The runner is `house-lights daemon`. It sleeps until the next sunrise, sunset, or midnight color change, then sends what the YAML says. systemd only keeps that process alive. Do not schedule sunset with systemd timers. `make install` installs the CLI and the user service and can change the lights. Do not run it unless the user asked.

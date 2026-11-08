@@ -2,7 +2,7 @@
 
 Method names used here are the ones that package documents: ``discover``,
 ``create_device``, ``Device.connect``, ``turn_on``, ``turn_off``,
-``set_brightness``, ``set_rgb``, ``set_segment_count``,
+``set_brightness``, ``set_rgb``,
 ``update``, ``release`` is available but this backend leaves idle disconnect
 to the library, and ``stop`` on process shutdown.
 
@@ -34,15 +34,13 @@ from govee_ble_local.transport.connection import UploadUnit
 from govee_ble_local.wire import build
 from govee_ble_local.wire.build import PRO_MULTI_A3
 
-from house_lights.backend import ApplyResult, GridResult, LightStatus
+from house_lights.backend import ApplyResult, LightStatus
 from house_lights.ble_store import load as load_ble
 from house_lights.ble_store import save as save_ble
 from house_lights.gcm_link import install_gcm_link
-from house_lights.grid import LIGHT_COUNT, SKETCH_COMM, group_colors, sketch_frames
-from house_lights.holidays import RGB
 from house_lights.retry import call_with_retry
 from house_lights.settings import Settings
-from house_lights.still import STILL_COMM, STILL_SCENE, still_scene_value
+from house_lights.still import RGB, STILL_COMM, STILL_SCENE, still_scene_value
 
 install_gcm_link()
 
@@ -133,55 +131,6 @@ class BluetoothBackend:
             colors_sent=palette,
             note="One light per color, repeating from the plug.",
         )
-
-    async def apply_grid(self, colors: Sequence[RGB], *, brightness: int) -> GridResult:
-        palette = tuple(colors)
-        if len(palette) != LIGHT_COUNT:
-            raise BluetoothError(f"grid has {len(palette)} lights; this string has {LIGHT_COUNT}")
-        frames, show = sketch_frames(palette, brightness=brightness)
-        device = self._require()
-
-        async def action() -> None:
-            await self._send_sketch(device, frames, show)
-
-        await self._retry(action, "BLE finger sketch")
-        colors_in_order = group_colors(palette)
-        return GridResult(
-            mode="ble_finger_sketch",
-            light_count=len(palette),
-            group_count=len(colors_in_order),
-            upload_packets=len(frames),
-            colors=colors_in_order,
-            note=(
-                "The controller acked the Finger Sketch upload and the show packet. "
-                "Effect 0x0f at speed 0 is the still picture traced on an H70C5. "
-                "Look at the house to see whether each light changed. "
-                "A status read cannot show per-light color. "
-                "The phone app on Bluetooth can overwrite it."
-            ),
-        )
-
-    async def _send_sketch(self, device: Any, frames: list[bytes], show: bytes) -> None:
-        # The modelled H706C profile has no scenes capability, so Device.set_scene
-        # will not send this. The upload is the app's kind-0x03 DIY picture and
-        # the show packet is scene code 0x0320 under sub-mode 0x0a. Kind 0x03 is
-        # a scene compose unit: its ack status is byte 2, and the show packet
-        # goes out only after that ack.
-        conn = device._conn
-        state = getattr(device, "_state", None)
-        hard = getattr(state, "hardware_version", None)
-        if not isinstance(hard, str):
-            hard = None
-        interval = upload_interval(hard, "compose")
-        unit = UploadUnit(PRO_MULTI_A3, SKETCH_COMM, 2, interval)
-        log.info(
-            "finger sketch: %s upload packets, then show, %.0f ms between packets",
-            len(frames),
-            interval * 1000,
-        )
-        with conn.hold_heartbeat():
-            await conn.send_unacked(frames, unit=unit)
-            await conn.send(show)
 
     async def _send_still(self, device: Any, frames: list[bytes], show: bytes) -> None:
         # Same compose unit as a library rgbic scene: ack status at byte 2,

@@ -6,15 +6,15 @@ import argparse
 import asyncio
 import logging
 import signal
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from house_lights import __version__
-from house_lights.backend import ApplyResult, GridResult, LightsBackend
-from house_lights.grid import load_grid
-from house_lights.holidays import RED, WHITE, BLUE, RGB, pattern_for
-from house_lights.schedule import NightRunner, run_forever, sun_events
+from house_lights.backend import ApplyResult, LightsBackend
+from house_lights.daemon import run_daemon
+from house_lights.plan import Declaration, Palette, Planner, default_state_path, resolve_desired_state_dir
 from house_lights.settings import Settings, UsageError, settings_from_namespace
+from house_lights.still import RGB
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,27 +31,21 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", help="optional JSON settings file; flags override it")
     common.add_argument("--backend", choices=("lan", "bluetooth"))
-    common.add_argument("--ip", help="LAN device IPv4 (default 192.168.0.119)")
+    common.add_argument("--ip", help="LAN IPv4 address; required with --backend lan")
     common.add_argument("--ble-address", dest="ble_address", help="Bluetooth address AA:BB:CC:DD:EE:FF")
     common.add_argument("--sku", help="Govee SKU (default H706C)")
-    common.add_argument("--lat", type=float, help="latitude in decimal degrees; required for run")
-    common.add_argument("--lon", type=float, help="longitude in decimal degrees; required for run")
+    common.add_argument("--lat", type=float, help="latitude in decimal degrees; required for daemon and run")
+    common.add_argument("--lon", type=float, help="longitude in decimal degrees; required for daemon and run")
+    common.add_argument(
+        "--desired-state",
+        dest="desired_state_dir",
+        help="directory of desired-state YAML; overrides the config key and the default desired-state/",
+    )
     common.add_argument("--timezone", help="IANA timezone (default America/Chicago)")
     common.add_argument("--brightness", type=int, help="1-100 (default 70)")
-    common.add_argument(
-        "--segments",
-        type=int,
-        help="Bluetooth segment count override; omit to use the device or library count",
-    )
     common.add_argument("--timeout", type=float, help="scan and LAN reply timeout seconds (default 8)")
     common.add_argument("--retries", type=int, help="attempts per command after a failure (default 3)")
     common.add_argument("--retry-delay", dest="retry_delay", type=float, help="seconds between retries (default 1)")
-    common.add_argument(
-        "--poll-interval",
-        dest="poll_interval",
-        type=float,
-        help="seconds between scheduler checks (default 60)",
-    )
     common.add_argument(
         "--scan",
         action="store_true",
@@ -61,23 +55,25 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--verbose", action="store_true")
 
     for name, help_text in (
-        ("run", "turn on at local sunset and off at local sunrise"),
-        ("on", "turn on now and paint the still pattern for the date"),
+        ("daemon", "keep the lights matched to the YAML"),
+        ("on", "turn on now and send the color for the date"),
         ("off", "turn off now"),
         ("status", "read device status when the backend can"),
-        ("preview", "print the still pattern for a date; no hardware"),
-        ("paint", "paint a 120-light grid from a JSON file"),
+        ("preview", "print the color for a date; no hardware"),
     ):
         command = sub.add_parser(name, parents=[common], help=help_text)
         if name in {"on", "preview"}:
             command.add_argument(
                 "--date",
-                help="YYYY-MM-DD civil date for the pattern (default: today in --timezone)",
+                help="YYYY-MM-DD civil date (default: today in --timezone)",
             )
-        if name == "paint":
+        if name == "daemon":
+            command.add_argument("--state", dest="state_path", help="file that remembers the last succeeded edge")
             command.add_argument(
-                "--grid",
-                help="JSON file: {\"lights\": [[r, g, b], ...]} of 120 colors, or a shorter list that repeats",
+                "--enforce-minutes",
+                dest="enforce_minutes",
+                type=int,
+                help="optional correction interval in minutes; off when omitted",
             )
     return parser
 
@@ -96,12 +92,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if settings.command == "preview":
             return _preview(settings)
-        if settings.command == "paint":
-            assert settings.grid is not None
-            colors, source_count = load_grid(settings.grid)
-        else:
-            colors, source_count = None, None
-        return asyncio.run(_hardware(settings, colors, source_count))
+        if settings.command == "daemon":
+            return asyncio.run(_daemon(settings))
+        return asyncio.run(_hardware(settings))
     except KeyboardInterrupt:
         return 130
     except Exception as exc:
@@ -110,31 +103,68 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _preview(settings: Settings) -> int:
-    day = settings.when or datetime.now(ZoneInfo(settings.timezone)).date()
-    pattern = pattern_for(day)
+    declaration = _declaration(settings)
+    zone = ZoneInfo(settings.timezone)
+    day = settings.when or datetime.now(zone).date()
+    palette = declaration.on_date(day)
     print(f"date: {day.isoformat()}")
-    print(f"pattern: {pattern.name}")
-    print("colors: " + ", ".join(
-        f"{name} {_fmt_rgb(rgb)}" for name, rgb in zip(pattern.color_names, pattern.colors, strict=True)
-    ))
-    if pattern.mixed:
-        print("static: repeating sequence, held still")
+    print(f"pattern: {palette.source}")
+    _print_palette(palette)
+    if settings.lat is None or settings.lon is None:
+        return 0
+    planner = Planner(declaration, settings.lat, settings.lon, settings.timezone)
+    sunrise = planner.sunrise_edge(day)
+    sunset = planner.sunset_edge(day)
+    midnight = planner.midnight_boundary(day + timedelta(days=1))
+    print(f"timezone: {settings.timezone}")
+    print(f"sunrise: {sunrise.when.isoformat(timespec='seconds')}")
+    print(f"sunset: {sunset.when.isoformat(timespec='seconds')}")
+    print(f"sunset colors: {sunset.source} {_color_text(sunset.colors)}")
+    if midnight is None:
+        print("midnight: no color change")
     else:
-        print("static: solid color, held still")
-    if settings.lat is not None and settings.lon is not None:
-        events = sun_events(settings.lat, settings.lon, day, settings.timezone)
-        print(f"timezone: {settings.timezone}")
-        print(f"sunrise: {events.sunrise.isoformat(timespec='seconds')}")
-        print(f"sunset: {events.sunset.isoformat(timespec='seconds')}")
-        print("lights: on from sunset through the following sunrise")
+        print(
+            f"midnight: {midnight.when.isoformat(timespec='seconds')} "
+            f"{midnight.source} {_color_text(midnight.colors)}"
+        )
+    print("lights: on from sunset through the following sunrise")
     return 0
 
 
-async def _hardware(
-    settings: Settings,
-    colors: tuple[RGB, ...] | None = None,
-    source_count: int | None = None,
-) -> int:
+async def _daemon(settings: Settings) -> int:
+    assert settings.lat is not None and settings.lon is not None
+    declaration = _declaration(settings)
+    planner = Planner(declaration, settings.lat, settings.lon, settings.timezone)
+    backend = _build_backend(settings)
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            pass
+    state_path = settings.state_path or default_state_path()
+    log = logging.getLogger("house_lights")
+    log.info("desired-state %s timezone %s", declaration.directory, settings.timezone)
+    nxt = planner.next_edge(datetime.now(ZoneInfo(settings.timezone)))
+    if nxt is not None:
+        log.info("next %s at %s", nxt.ident, nxt.when.isoformat(timespec="seconds"))
+    await run_daemon(
+        backend,
+        planner,
+        brightness=settings.brightness,
+        state_path=state_path,
+        stop=stop,
+        enforce_minutes=settings.enforce_minutes,
+    )
+    return 0
+
+
+def _declaration(settings: Settings) -> Declaration:
+    return Declaration.load(resolve_desired_state_dir(settings.desired_state_dir))
+
+
+async def _hardware(settings: Settings) -> int:
     backend = _build_backend(settings)
     try:
         await backend.open()
@@ -146,94 +176,23 @@ async def _hardware(
             return 0
         if settings.command == "on":
             return await _turn_on(backend, settings)
-        if settings.command == "paint":
-            assert colors is not None and source_count is not None
-            return await _paint(backend, settings, colors, source_count)
-        if settings.command == "run":
-            await _run(backend, settings)
-            return 0
         raise UsageError(f"unknown command {settings.command}")
     finally:
         await backend.close()
 
 
-async def _paint(
-    backend: LightsBackend,
-    settings: Settings,
-    colors: tuple[RGB, ...],
-    source_count: int,
-) -> int:
-    if source_count == len(colors):
-        print(f"grid: {len(colors)} lights")
-    else:
-        print(f"grid: {source_count} entries repeated to {len(colors)} lights")
-    await backend.turn_on()
-    await backend.set_brightness(settings.brightness)
-    try:
-        result = await backend.apply_grid(colors, brightness=settings.brightness)
-    except Exception as exc:
-        print(f"sketch failed: {exc}")
-        if settings.backend == "bluetooth":
-            await _restore_segment_rwb(backend)
-        return 1
-    _print_grid(result)
-    return 0
-
-
-async def _restore_segment_rwb(backend: LightsBackend) -> None:
-    try:
-        await backend.apply_pattern((RED, WHITE, BLUE))
-    except Exception as exc:
-        print(f"could not restore the red, white, blue pattern: {exc}")
-        return
-    print("restored the red, white, blue pattern")
-
-
-def _print_grid(result: GridResult) -> None:
-    print(
-        f"paint: {result.light_count} lights in {result.group_count} groups "
-        f"via {result.mode}, {result.upload_packets} upload packets"
-    )
-    if result.group_count <= 8:
-        print("groups: " + ", ".join(_fmt_rgb(color) for color in result.colors))
-    print(result.note)
-
-
 async def _turn_on(backend: LightsBackend, settings: Settings) -> int:
+    declaration = _declaration(settings)
     day = settings.when or datetime.now(ZoneInfo(settings.timezone)).date()
-    pattern = pattern_for(day)
+    palette = declaration.on_date(day)
     await backend.turn_on()
     await backend.set_brightness(settings.brightness)
-    result = await backend.apply_pattern(pattern.colors)
-    _print_apply(pattern.name, result)
+    if not palette.colors:
+        print(f"on: {palette.source}, no color list")
+        return 0
+    result = await backend.apply_pattern(palette.colors)
+    _print_apply(palette.source, result)
     return 0
-
-
-async def _run(backend: LightsBackend, settings: Settings) -> None:
-    assert settings.lat is not None and settings.lon is not None
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
-    logging.getLogger("house_lights").info(
-        "scheduler running in %s at lat %s lon %s; Ctrl-C to stop",
-        settings.timezone,
-        settings.lat,
-        settings.lon,
-    )
-    await run_forever(
-        backend,
-        NightRunner(),
-        latitude=settings.lat,
-        longitude=settings.lon,
-        timezone=settings.timezone,
-        brightness=settings.brightness,
-        poll_interval=settings.poll_interval,
-        stop=stop,
-    )
 
 
 def _print_status(status, settings: Settings) -> int:
@@ -257,6 +216,43 @@ def _print_apply(name: str, result: ApplyResult) -> None:
         print(result.note)
 
 
+_COLOR_NAMES: dict[RGB, str] = {
+    (255, 0, 0): "red",
+    (0, 255, 0): "green",
+    (0, 128, 0): "green",
+    (0, 0, 255): "blue",
+    (0, 56, 168): "blue",
+    (255, 255, 255): "white",
+    (255, 215, 0): "gold",
+    (255, 197, 143): "warm white",
+    (255, 165, 0): "orange",
+    (102, 0, 153): "violet",
+    (153, 0, 0): "deep red",
+    (135, 206, 235): "sky blue",
+}
+
+
+def _print_palette(palette: Palette) -> None:
+    print(f"colors: {_color_text(palette.colors)}")
+    if not palette.colors:
+        return
+    if len(set(palette.colors)) > 1:
+        print("static: repeating sequence, held still")
+    else:
+        print("static: solid color, held still")
+
+
+def _color_text(colors: tuple[RGB, ...] | None) -> str:
+    if not colors:
+        return "none"
+    parts: list[str] = []
+    for rgb in colors:
+        name = _COLOR_NAMES.get(rgb)
+        rendered = _fmt_rgb(rgb)
+        parts.append(f"{name} {rendered}" if name else rendered)
+    return ", ".join(parts)
+
+
 def _fmt_rgb(rgb: tuple[int, int, int]) -> str:
     return f"({rgb[0]}, {rgb[1]}, {rgb[2]})"
 
@@ -271,6 +267,8 @@ def _build_backend(settings: Settings) -> LightsBackend:
     if settings.backend == "lan":
         from house_lights.lan import LanBackend
 
+        if not settings.ip:
+            raise UsageError("LAN needs --ip or an ip key in --config")
         return LanBackend(
             settings.ip,
             timeout=settings.timeout,
