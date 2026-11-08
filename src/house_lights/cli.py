@@ -42,11 +42,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory of desired-state YAML; overrides the config key and the default desired-state/",
     )
     common.add_argument("--timezone", help="IANA timezone (default America/Chicago)")
-    common.add_argument(
-        "--brightness",
-        type=int,
-        help="1-100 override for this command; the default is brightness in desired-state/default.yaml",
-    )
     common.add_argument("--timeout", type=float, help="scan and LAN reply timeout seconds (default 8)")
     common.add_argument("--retries", type=int, help="attempts per command after a failure (default 3)")
     common.add_argument("--retry-delay", dest="retry_delay", type=float, help="seconds between retries (default 1)")
@@ -116,7 +111,7 @@ def _preview(settings: Settings) -> int:
     day = settings.when or datetime.now(zone).date()
     palette = declaration.on_date(day)
     print(f"date: {day.isoformat()}")
-    print(f"brightness: {declaration.brightness}")
+    print(f"brightness: {palette.brightness}")
     print(f"pattern: {palette.source}")
     _print_palette(palette)
     if settings.lat is None or settings.lon is None:
@@ -128,13 +123,13 @@ def _preview(settings: Settings) -> int:
     print(f"timezone: {settings.timezone}")
     print(f"sunrise: {sunrise.when.isoformat(timespec='seconds')}")
     print(f"sunset: {sunset.when.isoformat(timespec='seconds')}")
-    print(f"sunset colors: {sunset.source} {_color_text(sunset.colors)}")
+    print(f"sunset colors: {sunset.source} {_color_text(sunset.colors)} brightness {sunset.brightness}")
     if midnight is None:
         print("midnight: no color change")
     else:
         print(
             f"midnight: {midnight.when.isoformat(timespec='seconds')} "
-            f"{midnight.source} {_color_text(midnight.colors)}"
+            f"{midnight.source} {_color_text(midnight.colors)} brightness {midnight.brightness}"
         )
     print("lights: on from sunset through the following sunrise")
     return 0
@@ -161,18 +156,11 @@ async def _daemon(settings: Settings) -> int:
     await run_daemon(
         backend,
         planner,
-        brightness=_brightness(settings, declaration),
         state_path=state_path,
         stop=stop,
         enforce_minutes=settings.enforce_minutes,
     )
     return 0
-
-
-def _brightness(settings: Settings, declaration: Declaration) -> int:
-    if settings.brightness is not None:
-        return settings.brightness
-    return declaration.brightness
 
 
 def _declaration(settings: Settings) -> Declaration:
@@ -201,7 +189,7 @@ async def _turn_on(backend: LightsBackend, settings: Settings) -> int:
     day = settings.when or datetime.now(ZoneInfo(settings.timezone)).date()
     palette = declaration.on_date(day)
     await backend.turn_on()
-    await backend.set_brightness(_brightness(settings, declaration))
+    await backend.set_brightness(palette.brightness)
     if not palette.colors:
         print(f"on: {palette.source}, no color list")
         return 0

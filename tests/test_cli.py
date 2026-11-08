@@ -71,7 +71,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(settings.timezone, "America/Chicago")
         self.assertEqual(settings.sku, "H706C")
         self.assertIsNone(settings.ble_address)
-        self.assertIsNone(settings.brightness)
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "lights.json"
@@ -80,12 +79,11 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             flagged = build_parser().parse_args(
-                ["status", "--config", str(path), "--ip", "10.2.2.2", "--backend", "bluetooth", "--brightness", "40"]
+                ["status", "--config", str(path), "--ip", "10.2.2.2", "--backend", "bluetooth"]
             )
             merged = settings_from_namespace(flagged)
         self.assertEqual(merged.ip, "10.2.2.2")
         self.assertEqual(merged.backend, "bluetooth")
-        self.assertEqual(merged.brightness, 40)
         self.assertEqual(merged.lat, 1.0)
         self.assertEqual(merged.lon, 2.0)
 

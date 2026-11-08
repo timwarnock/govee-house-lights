@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Read [SCHEDULE.md](SCHEDULE.md) before any schedule work. It is the agreed design. Open items there are not decided. The YAML in `desired-state/` is the definition of the lights. `config.json` in the repo root is gitignored and holds the machine settings. The daemon reads that directory and that file. Do not put those settings under the home directory.
+`desired-state/` is the source of truth for the lights. Read those YAML files before any schedule work. Dates, colors, and brightness are whatever the files say. [SCHEDULE.md](SCHEDULE.md) describes how the daemon applies that directory. When the document and the YAML disagree, the YAML wins. Do not edit the YAML to match the document. When the user changes the YAML, update the document so it still describes the files.
+
+Do not add a holiday, season, date, color, or brightness the user did not ask for. `config.json` in the repo root is gitignored and holds the machine settings. The daemon reads that directory and that file. Do not put those settings under the home directory.
 
 Push and clone only through the timwarnock host:
 

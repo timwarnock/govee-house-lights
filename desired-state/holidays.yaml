@@ -1,34 +1,40 @@
 # First matching entry wins. Movable dates are first so they beat a fixed
 # date on the same civil day. prior_night and midnight default to false.
+# brightness is 100. Omit it and the number falls through to the season, then default.yaml.
 # easter: 0 is Easter Sunday. A negative offset counts back from that Sunday.
 # nth is 1-5 or last, together with weekday.
 
 - name: Palm Sunday
   easter: -7
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [0, 128, 0]
 
 - name: Good Friday
   easter: -2
+  brightness: 100
   colors:
     - [153, 0, 0]
 
 - name: Easter
   easter: 0
   prior_night: true
+  brightness: 100
   colors:
     - [255, 255, 255]
     - [255, 215, 0]
 
 - name: Ascension
   easter: 42
+  brightness: 100
   colors:
     - [255, 255, 255]
     - [135, 206, 235]
 
 - name: Pentecost
   easter: 49
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [255, 215, 0]
@@ -36,6 +42,7 @@
 - name: "New Year's Day"
   month: 1
   day: 1
+  brightness: 100
   colors:
     - [255, 215, 0]
     - [255, 255, 255]
@@ -43,6 +50,7 @@
 - name: Epiphany
   month: 1
   day: 6
+  brightness: 100
   colors:
     - [255, 215, 0]
     - [102, 0, 153]
@@ -51,6 +59,7 @@
 - name: Candlemas
   month: 2
   day: 2
+  brightness: 100
   colors:
     - [255, 255, 255]
     - [255, 176, 46]
@@ -59,6 +68,7 @@
   month: 2
   weekday: monday
   nth: 3
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [255, 255, 255]
@@ -67,6 +77,7 @@
 - name: St. Patrick
   month: 3
   day: 17
+  brightness: 100
   colors:
     - [0, 132, 61]
     - [255, 215, 0]
@@ -74,6 +85,7 @@
 - name: St. Joseph
   month: 3
   day: 19
+  brightness: 100
   colors:
     - [121, 85, 61]
     - [255, 255, 255]
@@ -82,6 +94,7 @@
 - name: Annunciation
   month: 3
   day: 25
+  brightness: 100
   colors:
     - [0, 56, 168]
     - [255, 255, 255]
@@ -90,6 +103,7 @@
   month: 5
   weekday: monday
   nth: last
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [255, 255, 255]
@@ -98,6 +112,7 @@
 - name: Independence Day
   month: 7
   day: 4
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [255, 255, 255]
@@ -106,6 +121,7 @@
 - name: Assumption
   month: 8
   day: 15
+  brightness: 100
   colors:
     - [0, 0, 255]
     - [255, 255, 255]
@@ -115,6 +131,7 @@
   month: 10
   weekday: monday
   nth: 2
+  brightness: 100
   colors:
     - [0, 146, 70]
     - [255, 255, 255]
@@ -123,6 +140,7 @@
 - name: All Saints
   month: 11
   day: 1
+  brightness: 100
   colors:
     - [255, 255, 255]
     - [255, 215, 0]
@@ -130,12 +148,14 @@
 - name: All Souls
   month: 11
   day: 2
+  brightness: 100
   colors:
     - [102, 0, 153]
 
 - name: Veterans Day
   month: 11
   day: 11
+  brightness: 100
   colors:
     - [255, 0, 0]
     - [255, 255, 255]
@@ -145,6 +165,7 @@
   month: 11
   weekday: thursday
   nth: 4
+  brightness: 100
   colors:
     - [255, 140, 0]
     - [255, 215, 0]
@@ -153,6 +174,7 @@
 - name: Immaculate Conception
   month: 12
   day: 8
+  brightness: 100
   colors:
     - [0, 0, 255]
     - [255, 255, 255]
@@ -160,6 +182,7 @@
 - name: Our Lady of Guadalupe
   month: 12
   day: 12
+  brightness: 100
   colors:
     - [196, 98, 90]
     - [0, 128, 128]
@@ -169,6 +192,7 @@
   month: 12
   day: 25
   midnight: true
+  brightness: 100
   colors:
     - [255, 255, 255]
     - [255, 215, 0]

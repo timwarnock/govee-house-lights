@@ -2,7 +2,7 @@
 
 Local control for a Govee Permanent Outdoor Lights Pro (H706C). The computer talks to the lights over Bluetooth or the local LAN API. There is no need for a Govee cloud account and no API key.
 
-The YAML is the definition of the lights. The default files are in `desired-state/`. The machine settings are `config.json` in this directory. That file is gitignored. Edit either one, then reinstall:
+`desired-state/` is the definition of the lights. Dates, colors, and brightness live in those YAML files. [SCHEDULE.md](SCHEDULE.md) describes how a match is chosen. When the document and the files disagree, the files win. The machine settings are `config.json` in this directory. That file is gitignored. Edit the YAML or the config, then reinstall:
 
 ```bash
 make install
@@ -25,7 +25,7 @@ Install [uv](https://docs.astral.sh/uv/) and Python 3.11 or newer. Bluetooth nee
 - `sku` is `H706C`. `timeout`, `retries`, and `retry_delay` are the radio settings.
 - `enforce_minutes` is optional. Leave it out and the daemon does not correct the lights between edges.
 
-Brightness is `brightness` in `desired-state/default.yaml`, one number from 1 to 100 for the whole string. It is not a config key.
+Brightness is one number from 1 to 100 for the whole string. A day file, holiday, or season may set `brightness`. The first entry that sets it wins, in that same order. An entry that omits it leaves the number for the next match. `desired-state/default.yaml` is the last fallback. A missing key there means 100. The value each entry uses is the value in that file.
 
 The daemon is a systemd user service. It is not a timer: sunset is a different minute every day. Enable lingering so it keeps running without a login session:
 
@@ -40,7 +40,7 @@ Quit the phone app before a Bluetooth command. The app holds the only connection
 | File | What it does |
 | --- | --- |
 | `config.json` | Backend, location, and timezone. Gitignored. Created by `make config`. |
-| `desired-state/default.yaml` | Color when nothing else matches, and the brightness. |
+| `desired-state/default.yaml` | Color when nothing else matches, and the fallback brightness. |
 | `desired-state/holidays.yaml` | One civil day each. The first match wins. |
 | `desired-state/seasons.yaml` | Inclusive date ranges. A holiday wins over a season. |
 | `desired-state/days/YYYY-MM-DD.yaml` | One civil date. It wins over holidays. |
@@ -58,11 +58,11 @@ A shorter color list repeats from the plug. `description` on a day file is a not
     - [0, 0, 255]
 ```
 
-`prior_night: true` starts that color at sunset the evening before. `midnight: true` starts it at 00:00 and stops it at the next 00:00. Both together run from the previous sunset until 00:00 on the day after, and the midnight in the middle does not change the color. The shipped file sets those flags only on Easter and Christmas. The agreed rules, and the items that are still open, are in [SCHEDULE.md](SCHEDULE.md).
+`prior_night: true` starts that color at sunset the evening before. `midnight: true` starts it at 00:00 and stops it at the next 00:00. Both together run from the previous sunset until 00:00 on the day after, and the midnight in the middle does not change the color. Which entries set those flags is in `desired-state/holidays.yaml`. [SCHEDULE.md](SCHEDULE.md) describes the windows.
 
 `easter: 0` is Easter Sunday. A negative number counts back from that Sunday. `nth` is `1` through `5`, or `last`, together with `weekday`.
 
-The Christmas season shipped here is December 24 through December 26. That is the span the night actually changes on. December 1 through January 5 is not settled. Widen `desired-state/seasons.yaml` if you want the longer range.
+Seasons and holidays are the entries in `desired-state/`. A holiday on a date inside a season wins that night.
 
 A reboot does not send a night that already succeeded, so a later change from the phone stays. `make install` forgets that memory and applies the YAML for the current edge.
 

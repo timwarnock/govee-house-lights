@@ -183,10 +183,67 @@ class ScheduleBehaviorTests(unittest.TestCase):
             (root / "default.yaml").write_text("brightness: 40\ncolors: [[1, 2, 3]]\n", encoding="utf-8")
             self.assertEqual(Declaration.load(root).brightness, 40)
             (root / "default.yaml").write_text("colors: [[1, 2, 3]]\n", encoding="utf-8")
-            self.assertEqual(Declaration.load(root).brightness, 70)
+            self.assertEqual(Declaration.load(root).brightness, 100)
             (root / "default.yaml").write_text("brightness: 0\ncolors: [[1, 2, 3]]\n", encoding="utf-8")
             with self.assertRaises(DeclarationError):
                 Declaration.load(root)
+
+    def test_brightness_falls_through_the_same_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root,
+                holidays=[
+                    {"name": "Inside", "month": 10, "day": 12, "brightness": 100, "colors": [[1, 0, 0]]},
+                    {"name": "Plain", "month": 7, "day": 4, "colors": [[2, 0, 0]]},
+                    {
+                        "name": "Quiet",
+                        "month": 12,
+                        "day": 25,
+                        "midnight": True,
+                        "colors": [[8, 0, 0]],
+                    },
+                ],
+                seasons=[
+                    {
+                        "name": "Fall",
+                        "start": {"month": 10, "day": 1},
+                        "end": {"month": 11, "day": 30},
+                        "colors": [[9, 0, 0]],
+                    },
+                    {
+                        "name": "Christmas season",
+                        "start": {"month": 12, "day": 1},
+                        "end": {"month": 1, "day": 5},
+                        "brightness": 100,
+                        "colors": [[3, 0, 0]],
+                    },
+                ],
+                days={
+                    "2026-12-20.yaml": {"colors": [[4, 0, 0]]},
+                    "2026-12-21.yaml": {"brightness": 40, "colors": [[5, 0, 0]]},
+                },
+            )
+            (root / "default.yaml").write_text(
+                "brightness: 70\ncolors:\n  - [255, 197, 143]\n",
+                encoding="utf-8",
+            )
+            declaration = Declaration.load(root)
+            planner = _planner(root)
+            self.assertEqual(declaration.on_date(date(2026, 10, 15)).brightness, 70)
+            self.assertEqual(declaration.on_date(date(2026, 10, 12)).source, "Inside")
+            self.assertEqual(declaration.on_date(date(2026, 10, 12)).brightness, 100)
+            self.assertEqual(declaration.on_date(date(2026, 12, 10)).brightness, 100)
+            self.assertEqual(declaration.on_date(date(2026, 12, 20)).source, "days/2026-12-20.yaml")
+            self.assertEqual(declaration.on_date(date(2026, 12, 20)).brightness, 100)
+            self.assertEqual(declaration.on_date(date(2026, 12, 21)).brightness, 40)
+            self.assertEqual(declaration.on_date(date(2026, 12, 25)).source, "Quiet")
+            self.assertEqual(declaration.on_date(date(2026, 12, 25)).brightness, 100)
+            self.assertEqual(declaration.on_date(date(2026, 7, 4)).brightness, 70)
+            self.assertEqual(declaration.on_date(date(2026, 6, 1)).brightness, 70)
+            night = planner.palette_at(_sunset(planner, date(2026, 10, 12)))
+            self.assertEqual(night.source, "Inside")
+            self.assertEqual(night.brightness, 100)
 
     def test_bad_files_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,6 +287,17 @@ class ShippedLightsTests(unittest.TestCase):
             planner.midnight_boundary(day)
             day += timedelta(days=1)
         self.assertIsNotNone(declaration.on_date(date(2024, 2, 29)))
+        self.assertEqual(declaration.brightness, 70)
+        self.assertEqual(declaration.on_date(date(2026, 7, 4)).brightness, 100)
+        self.assertEqual(declaration.on_date(date(2026, 10, 15)).brightness, 70)
+        self.assertEqual(declaration.on_date(date(2026, 12, 20)).brightness, 100)
+        self.assertEqual(declaration.on_date(date(2026, 12, 25)).brightness, 100)
+        self.assertEqual(declaration.on_date(date(2026, 1, 1)).source, "New Year's Day")
+        self.assertEqual(declaration.on_date(date(2026, 1, 2)).source, "default")
+        self.assertEqual(declaration.on_date(date(2026, 6, 1)).brightness, 70)
+        columbus = planner.palette_at(planner.sunset(date(2026, 10, 12)) + timedelta(minutes=30))
+        self.assertEqual(columbus.source, "Columbus Day")
+        self.assertEqual(columbus.brightness, 100)
 
 
 def _design() -> Path:

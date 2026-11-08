@@ -42,7 +42,6 @@ def settings(tmp: Path, **overrides) -> Settings:
         lat=None,
         lon=None,
         timezone="America/Chicago",
-        brightness=70,
         timeout=0.2,
         retries=1,
         retry_delay=0.0,

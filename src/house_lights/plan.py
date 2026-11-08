@@ -6,8 +6,8 @@ then the first holiday whose window covers the moment, then the first season
 that contains the civil date, then the default. A missing default means sunset
 turns the lights on and sends no color list.
 
-``description`` is stored and ignored. Other key names are the ones this loader
-reads. ``SCHEDULE.md`` left those names open.
+``description`` is stored and ignored. The loader accepts the keys named
+in this module. The directory is the source of truth for dates and colors.
 """
 
 from __future__ import annotations
@@ -23,6 +23,10 @@ import yaml
 from house_lights.schedule import ScheduleError, SunEvents, is_night, sun_events
 from house_lights.still import RGB, still_scene_value
 
+# Used when default.yaml omits brightness. An entry that omits it falls
+# through the match order and then uses the number from default.yaml.
+DEFAULT_BRIGHTNESS = 100
+
 _WEEKDAYS = {
     "monday": 0,
     "tuesday": 1,
@@ -34,9 +38,9 @@ _WEEKDAYS = {
 }
 
 _WHEN_KEYS = frozenset({"easter", "month", "day", "weekday", "nth"})
-_HOLIDAY_KEYS = _WHEN_KEYS | {"name", "colors", "prior_night", "midnight", "description"}
-_SEASON_KEYS = frozenset({"name", "colors", "start", "end", "description"})
-_DAY_KEYS = frozenset({"colors", "description"})
+_HOLIDAY_KEYS = _WHEN_KEYS | {"name", "colors", "prior_night", "midnight", "description", "brightness"}
+_SEASON_KEYS = frozenset({"name", "colors", "start", "end", "description", "brightness"})
+_DAY_KEYS = frozenset({"colors", "description", "brightness"})
 
 
 class DeclarationError(Exception):
@@ -133,6 +137,7 @@ class When:
 class Palette:
     source: str
     colors: tuple[RGB, ...] | None
+    brightness: int
 
 
 @dataclass(frozen=True)
@@ -141,6 +146,7 @@ class Edge:
     when: datetime
     source: str
     colors: tuple[RGB, ...] | None
+    brightness: int
 
     @property
     def ident(self) -> str:
@@ -156,6 +162,7 @@ class _Rule:
     midnight: bool = False
     start: When | None = None
     end: When | None = None
+    brightness: int | None = None
 
 
 @dataclass(frozen=True)
@@ -189,22 +196,38 @@ class Declaration:
 
     def on_date(self, day: date) -> Palette:
         """Civil-date match, ignoring sunset and midnight windows."""
+        rules: list[_Rule] = []
         exact = self.exact_days.get(day)
         if exact is not None:
-            return Palette(exact.source, exact.colors)
-        every = self.every_days.get((day.month, day.day))
-        if every is not None:
-            return Palette(every.source, every.colors)
+            rules.append(exact)
+        else:
+            every = self.every_days.get((day.month, day.day))
+            if every is not None:
+                rules.append(every)
         for holiday in self.holidays:
             assert holiday.when is not None
             if holiday.when.resolve(day.year) == day:
-                return Palette(holiday.source, holiday.colors)
+                rules.append(holiday)
+                break
         for season in self.seasons:
             if _season_includes(season, day):
-                return Palette(season.source, season.colors)
-        if self.default_colors is not None:
-            return Palette("default", self.default_colors)
-        return Palette("none", None)
+                rules.append(season)
+                break
+        return self.palette_from(rules)
+
+    def palette_from(self, rules: list[_Rule]) -> Palette:
+        """Colors come from the first rule. Brightness comes from the first rule that sets it."""
+        brightness = self.brightness
+        for rule in rules:
+            if rule.brightness is not None:
+                brightness = rule.brightness
+                break
+        if not rules:
+            if self.default_colors is not None:
+                return Palette("default", self.default_colors, brightness)
+            return Palette("none", None, brightness)
+        first = rules[0]
+        return Palette(first.source, first.colors, brightness)
 
 
 class Planner:
@@ -220,26 +243,26 @@ class Planner:
 
     def palette_at(self, moment: datetime) -> Palette:
         local = self._local(moment)
+        rules: list[_Rule] = []
         covered = self._day_covering(local)
         if covered is not None:
-            return covered
+            rules.append(covered)
         holiday = self._holiday_covering(local)
         if holiday is not None:
-            return Palette(holiday.source, holiday.colors)
+            rules.append(holiday)
         for season in self.declaration.seasons:
             if _season_includes(season, local.date()):
-                return Palette(season.source, season.colors)
-        if self.declaration.default_colors is not None:
-            return Palette("default", self.declaration.default_colors)
-        return Palette("none", None)
+                rules.append(season)
+                break
+        return self.declaration.palette_from(rules)
 
     def sunrise_edge(self, day: date) -> Edge:
-        return Edge("sunrise", self.sunrise(day), "sunrise", None)
+        return Edge("sunrise", self.sunrise(day), "sunrise", None, self.declaration.brightness)
 
     def sunset_edge(self, day: date) -> Edge:
         when = self.sunset(day)
         palette = self.palette_at(when)
-        return Edge("sunset", when, palette.source, palette.colors)
+        return Edge("sunset", when, palette.source, palette.colors, palette.brightness)
 
     def midnight_boundary(self, day: date) -> Edge | None:
         """A color change at 00:00 on ``day`` while the lights are still on.
@@ -256,9 +279,9 @@ class Planner:
             return None
         before = self.palette_at(moment - timedelta(seconds=1))
         after = self.palette_at(moment)
-        if before.colors == after.colors:
+        if before.colors == after.colors and before.brightness == after.brightness:
             return None
-        return Edge("midnight", moment, after.source, after.colors)
+        return Edge("midnight", moment, after.source, after.colors, after.brightness)
 
     def current_edge(self, moment: datetime) -> Edge | None:
         local = self._local(moment)
@@ -309,7 +332,7 @@ class Planner:
             day += timedelta(days=1)
         return list(found.values())
 
-    def _day_covering(self, moment: datetime) -> Palette | None:
+    def _day_covering(self, moment: datetime) -> _Rule | None:
         candidates = (moment.date() - timedelta(days=1), moment.date())
         for table, label in (
             (self.declaration.exact_days, "exact"),
@@ -320,7 +343,7 @@ class Planner:
                 if rule is None:
                     continue
                 if self.sunset(day) <= moment < self.sunrise(day + timedelta(days=1)):
-                    return Palette(rule.source, rule.colors)
+                    return rule
         return None
 
     def _holiday_covering(self, moment: datetime) -> _Rule | None:
@@ -414,7 +437,7 @@ def _load_named_list(path: Path, parse) -> tuple[_Rule, ...]:
 
 def _load_default(path: Path) -> tuple[tuple[RGB, ...] | None, int]:
     if not path.is_file():
-        return None, 70
+        return None, DEFAULT_BRIGHTNESS
     raw = _read_yaml(path)
     if not isinstance(raw, dict):
         raise DeclarationError("default.yaml must be a mapping")
@@ -422,7 +445,15 @@ def _load_default(path: Path) -> tuple[tuple[RGB, ...] | None, int]:
     if unknown:
         raise DeclarationError(f"default.yaml has unknown keys: {', '.join(sorted(unknown))}")
     _optional_text(raw.get("description"), "default.yaml description")
-    return _colors(raw.get("colors"), "default.yaml"), _brightness(raw.get("brightness", 70), path.name)
+    return _colors(raw.get("colors"), "default.yaml"), _brightness(
+        raw.get("brightness", DEFAULT_BRIGHTNESS), path.name
+    )
+
+
+def _optional_brightness(mapping: dict, where: str) -> int | None:
+    if "brightness" not in mapping or mapping["brightness"] is None:
+        return None
+    return _brightness(mapping["brightness"], where)
 
 
 def _brightness(value: object, where: str) -> int:
@@ -468,7 +499,11 @@ def _day_file(path: Path) -> _Rule:
     if unknown:
         raise DeclarationError(f"{where} has unknown keys: {', '.join(sorted(unknown))}")
     _optional_text(raw.get("description"), f"{where} description")
-    return _Rule(source=where, colors=_colors(raw.get("colors"), where))
+    return _Rule(
+        source=where,
+        colors=_colors(raw.get("colors"), where),
+        brightness=_optional_brightness(raw, where),
+    )
 
 
 def _every_key(path: Path) -> tuple[int, int]:
@@ -496,6 +531,7 @@ def _holiday(raw: object, filename: str, index: int) -> _Rule:
         when=when,
         prior_night=_flag(mapping, "prior_night", where),
         midnight=_flag(mapping, "midnight", where),
+        brightness=_optional_brightness(mapping, where),
     )
 
 
@@ -510,6 +546,7 @@ def _season(raw: object, filename: str, index: int) -> _Rule:
         colors=_colors(mapping.get("colors"), where),
         start=_parse_when(mapping["start"], f"{where} start"),
         end=_parse_when(mapping["end"], f"{where} end"),
+        brightness=_optional_brightness(mapping, where),
     )
 
 

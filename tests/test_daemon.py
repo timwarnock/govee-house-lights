@@ -98,7 +98,7 @@ class DaemonTests(unittest.TestCase):
         moment = datetime(2026, 12, 25, 0, 10, tzinfo=ZONE)
         backend = FakeBackend()
         _run(planner, backend, state, moment)
-        self.assertEqual(backend.events, ["open", ("pattern", WHITE), "close"])
+        self.assertEqual(backend.events, ["open", ("brightness", 40), ("pattern", WHITE), "close"])
 
     def test_a_missed_sunset_still_turns_the_night_on(self) -> None:
         planner, state = _setup()
@@ -133,7 +133,6 @@ class DaemonTests(unittest.TestCase):
             run_daemon(
                 backend,
                 planner,
-                brightness=40,
                 state_path=state,
                 stop=stop,
                 now=clock,
@@ -194,7 +193,10 @@ def _setup() -> tuple[Planner, Path]:
         ]),
         encoding="utf-8",
     )
-    (root / "default.yaml").write_text("colors:\n  - [255, 197, 143]\n", encoding="utf-8")
+    (root / "default.yaml").write_text(
+        "brightness: 40\ncolors:\n  - [255, 197, 143]\n",
+        encoding="utf-8",
+    )
     return Planner(Declaration.load(root), FIXTURE_LAT, FIXTURE_LON, TZ), root / "edge.json"
 
 
@@ -209,7 +211,6 @@ def _run(planner: Planner, backend: FakeBackend, state: Path, moment: datetime) 
         run_daemon(
             backend,
             planner,
-            brightness=40,
             state_path=state,
             stop=stop,
             now=lambda: moment,

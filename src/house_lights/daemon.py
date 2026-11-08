@@ -84,7 +84,6 @@ async def run_daemon(
     backend: LightsBackend,
     planner: Planner,
     *,
-    brightness: int,
     state_path: Path,
     stop: asyncio.Event,
     now: Clock | None = None,
@@ -106,7 +105,6 @@ async def run_daemon(
                 await perform(
                     backend,
                     current,
-                    brightness,
                     sunset_already_on=sunset_already_applied(succeeded, current),
                 )
                 save_edge(state_path, current.ident)
@@ -115,7 +113,7 @@ async def run_daemon(
                     log.info("next %s at %s", nxt.ident, nxt.when.isoformat(timespec="seconds"))
             elif next_enforce is not None and current is not None and moment >= next_enforce:
                 log.info("enforce %s", current.ident)
-                await enforce(backend, current, brightness)
+                await enforce(backend, current)
                 next_enforce = clock() + timedelta(minutes=enforce_minutes or 0)
             await sleep_until(
                 _deadline(planner, clock(), next_enforce, failure_retry),
@@ -140,13 +138,12 @@ async def run_daemon(
 async def perform(
     backend: LightsBackend,
     edge: Edge,
-    brightness: int,
     *,
     sunset_already_on: bool,
 ) -> None:
     await backend.open()
     try:
-        await send_edge(backend, edge, brightness, sunset_already_on=sunset_already_on)
+        await send_edge(backend, edge, sunset_already_on=sunset_already_on)
     finally:
         await backend.close()
 
@@ -154,7 +151,6 @@ async def perform(
 async def send_edge(
     backend: LightsBackend,
     edge: Edge,
-    brightness: int,
     *,
     sunset_already_on: bool,
 ) -> None:
@@ -165,7 +161,7 @@ async def send_edge(
     colors_only = edge.kind == "midnight" and sunset_already_on
     if not colors_only:
         await backend.turn_on()
-        await backend.set_brightness(brightness)
+    await backend.set_brightness(edge.brightness)
     if edge.colors is None:
         log.info("%s has no color list", edge.ident)
         return
@@ -176,7 +172,7 @@ async def send_edge(
         log.info("sent %s via %s", edge.source, result.mode)
 
 
-async def enforce(backend: LightsBackend, edge: Edge, brightness: int) -> None:
+async def enforce(backend: LightsBackend, edge: Edge) -> None:
     """Correct power and brightness, and resend colors. Status cannot see them."""
     await backend.open()
     try:
@@ -187,8 +183,8 @@ async def enforce(backend: LightsBackend, edge: Edge, brightness: int) -> None:
             return
         if status is None or status.is_on is not True:
             await backend.turn_on()
-        if status is None or status.brightness != brightness:
-            await backend.set_brightness(brightness)
+        if status is None or status.brightness != edge.brightness:
+            await backend.set_brightness(edge.brightness)
         if edge.colors is not None:
             result = await backend.apply_pattern(edge.colors)
             if result.note:

@@ -1,6 +1,8 @@
 # Used when no day file, holiday, or season matches.
 # Sunset still turns the lights on when this file is missing.
 # brightness is the whole string, from 1 to 100.
+# A day, holiday, or season that omits brightness uses this number.
+# A missing key in this file means 100.
 brightness: 70
 colors:
   - [255, 197, 143]

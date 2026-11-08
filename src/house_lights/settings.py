@@ -49,7 +49,6 @@ class Settings:
     lat: float | None
     lon: float | None
     timezone: str
-    brightness: int | None
     timeout: float
     retries: int
     retry_delay: float
@@ -130,12 +129,6 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
     if (lat_f is None) ^ (lon_f is None):
         raise UsageError("pass both --lat and --lon")
 
-    brightness = args.brightness
-    if brightness is not None:
-        brightness = int(brightness)
-        if not 1 <= brightness <= 100:
-            raise UsageError("--brightness must be an integer from 1 to 100")
-
     timeout = float(_pick(args.timeout, data, "timeout", DEFAULT_TIMEOUT))
     retries = int(_pick(args.retries, data, "retries", DEFAULT_RETRIES))
     retry_delay = float(_pick(args.retry_delay, data, "retry_delay", DEFAULT_RETRY_DELAY))
@@ -180,7 +173,6 @@ def settings_from_namespace(args, *, file_data: dict | None = None) -> Settings:
         lat=lat_f,
         lon=lon_f,
         timezone=timezone,
-        brightness=brightness,
         timeout=timeout,
         retries=retries,
         retry_delay=retry_delay,
